@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blob Foundry</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --ink: #16130f;
+    --paper: #fffdf7;
+    --line: #16130f;
+    --accent: #ff4d2e;
+    --accent2: #2e5bff;
+    --muted: #7a746a;
+    --grid: rgba(22,19,15,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Courier New", ui-monospace, monospace;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  .display-font {
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 22px 32px 18px;
+    border-bottom: 2px solid var(--line);
+  }
+  header h1 {
+    font-family: Georgia, serif;
+    font-weight: 800;
+    font-size: clamp(28px, 5vw, 48px);
+    letter-spacing: -0.02em;
+    font-style: italic;
+  }
+  header h1 .dot { color: var(--accent); }
+  header .tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--muted);
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 0;
+    min-height: calc(100vh - 92px);
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* Stage */
+  .stage-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    min-width: 0;
+    min-height: 480px;
+  }
+  .stage {
+    position: relative;
+    width: 100%;
+    max-width: 560px;
+    aspect-ratio: 1 / 1;
+    border: 2px solid var(--line);
+    background: var(--paper);
+    box-shadow: 10px 10px 0 var(--line);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .stage .corner {
+    position: absolute;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 6px 8px;
+  }
+  .stage .corner.tl { top: 0; left: 0; }
+  .stage .corner.br { bottom: 0; right: 0; }
+  svg#art { width: 82%; height: 82%; display: block; }
+
+  /* Panel */
+  .panel {
+    border-left: 2px solid var(--line);
+    background: var(--paper);
+    padding: 22px 22px 70px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+  }
+  @media (max-width: 900px) {
+    .panel { border-left: none; border-top: 2px solid var(--line); }
+  }
+  .group { border-top: 1px dashed var(--line); padding-top: 16px; }
+  .group:first-child { border-top: none; padding-top: 0; }
+  .group h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .group h2::before {
+    content: "";
+    width: 10px; height: 10px;
+    background: var(--accent);
+    display: inline-block;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    color: var(--ink);
+  }
+  .field label .val { color: var(--accent2); font-weight: bold; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 3px;
+    background: var(--line);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px;
+    background: var(--paper);
+    border: 2px solid var(--line);
+    border-radius: 0;
+    cursor: pointer;
+    box-shadow: 2px 2px 0 var(--accent);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px;
+    background: var(--paper);
+    border: 2px solid var(--line);
+    border-radius: 0;
+    cursor: pointer;
+  }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font-family: inherit;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 9px 12px;
+    background: var(--paper);
+    color: var(--ink);
+    border: 2px solid var(--line);
+    cursor: pointer;
+    transition: transform 0.06s ease, box-shadow 0.06s ease;
+    box-shadow: 3px 3px 0 var(--line);
+  }
+  button:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--accent); }
+  button:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--line); }
+  button.primary { background: var(--accent); color: #fff; }
+  button.wide { flex: 1; }
+
+  .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .swatch {
+    aspect-ratio: 1/1;
+    border: 2px solid var(--line);
+    cursor: pointer;
+    position: relative;
+  }
+  .swatch.active::after {
+    content: "";
+    position: absolute; inset: 3px;
+    border: 2px solid var(--paper);
+  }
+
+  .seg { display: flex; border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--line); }
+  .seg button {
+    flex: 1; border: none; box-shadow: none; border-right: 2px solid var(--line);
+    background: var(--paper);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button:hover { transform: none; box-shadow: none; background: #efe9dc; }
+  .seg button.active { background: var(--ink); color: var(--paper); }
+
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .switch { width: 42px; height: 22px; border: 2px solid var(--line); background: var(--paper); position: relative; cursor: pointer; }
+  .switch .knob { position: absolute; top: 1px; left: 1px; width: 16px; height: 16px; background: var(--line); transition: left 0.12s ease; }
+  .switch.on { background: var(--accent2); }
+  .switch.on .knob { left: 21px; background: #fff; }
+
+  .code {
+    font-size: 10px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    padding: 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 90px;
+    overflow-y: auto;
+    line-height: 1.4;
+  }
+
+  /* Lock button on each field */
+  .field label { align-items: center; }
+  .field label .right { display: flex; align-items: center; gap: 8px; }
+  .lock {
+    width: 20px; height: 20px;
+    border: 2px solid var(--line);
+    background: var(--paper);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+    padding: 0;
+    box-shadow: none;
+    flex-shrink: 0;
+  }
+  .lock:hover { transform: none; box-shadow: none; background: #efe9dc; }
+  .lock.locked { background: var(--accent); color: #fff; border-color: var(--line); }
+  .lock .open { display: inline; }
+  .lock .closed { display: none; }
+  .lock.locked .open { display: none; }
+  .lock.locked .closed { display: inline; }
+
+  .hint { font-size: 10px; color: var(--muted); text-transform: none; letter-spacing: 0; margin: -4px 0 12px; line-height: 1.4; }
+
+  /* Batch gallery */
+  .gallery-wrap { margin-top: 24px; }
+  .gallery-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 32px 12px;
+  }
+  .gallery-head h3 {
+    font-family: Georgia, serif; font-style: italic; font-size: 20px;
+  }
+  .gallery-head .count { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.15em; }
+  .gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+    padding: 0 32px 30px;
+  }
+  .cell {
+    border: 2px solid var(--line);
+    background: var(--paper);
+    aspect-ratio: 1/1;
+    box-shadow: 4px 4px 0 var(--line);
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.08s ease, box-shadow 0.08s ease;
+  }
+  .cell:hover { transform: translate(-2px,-2px); box-shadow: 6px 6px 0 var(--accent); }
+  .cell svg { width: 100%; height: 100%; display: block; padding: 10%; }
+  .cell .idx {
+    position: absolute; top: 0; left: 0;
+    font-size: 9px; padding: 2px 5px;
+    background: var(--line); color: var(--paper);
+    letter-spacing: 0.1em;
+  }
+  .gallery-empty {
+    padding: 30px 32px; font-size: 12px; color: var(--muted);
+    border: 2px dashed var(--line); margin: 0 32px 30px; text-align: center;
+  }
+  footer.foot {
+    padding: 10px 32px 60px;
+    font-size: 11px;
+    color: var(--muted);
+    border-top: 2px solid var(--line);
+    letter-spacing: 0.05em;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1 class="display-font">Blob Foundry<span class="dot">.</span></h1>
+    <div class="tag">Organic &amp; geometric SVG generator</div>
+  </header>
+
+  <div class="layout">
+    <div class="stage-wrap">
+      <div class="stage">
+        <span class="corner tl" id="dimLabel">—</span>
+        <span class="corner br">SVG · 300×300</span>
+        <svg id="art" viewBox="-150 -150 300 300" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="group">
+        <h2>Mode</h2>
+        <div class="seg" id="modeSeg">
+          <button data-mode="blob" class="active">Blob</button>
+          <button data-mode="polygon">Polygon</button>
+          <button data-mode="star">Star</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Shape</h2>
+        <p class="hint">Tap the lock on any property to keep it fixed while batch-generating.</p>
+        <div class="field">
+          <label>Points / Sides <span class="right"><span class="val" id="pointsVal">6</span><button class="lock" data-lock="points"><span class="open">🔓</span><span class="closed">🔒</span></button></span></label>
+          <input type="range" id="points" min="3" max="12" step="1" value="6">
+        </div>
+        <div class="field">
+          <label>Irregularity <span class="right"><span class="val" id="irregVal">0.45</span><button class="lock" data-lock="irreg"><span class="open">🔓</span><span class="closed">🔒</span></button></span></label>
+          <input type="range" id="irreg" min="0" max="1" step="0.01" value="0.45">
+        </div>
+        <div class="field">
+          <label>Roundness <span class="right"><span class="val" id="roundVal">0.85</span><button class="lock" data-lock="round"><span class="open">🔓</span><span class="closed">🔒</span></button></span></label>
+          <input type="range" id="round" min="0" max="1" step="0.01" value="0.85">
+        </div>
+        <div class="field" id="innerField" style="display:none;">
+          <label>Inner radius <span class="right"><span class="val" id="innerVal">0.45</span><button class="lock" data-lock="inner"><span class="open">🔓</span><span class="closed">🔒</span></button></span></label>
+          <input type="range" id="inner" min="0.1" max="0.9" step="0.01" value="0.45">
+        </div>
+        <div class="field">
+          <label>Rotation <span class="right"><span class="val" id="rotVal">0°</span><button class="lock" data-lock="rot"><span class="open">🔓</span><span class="closed">🔒</span></button></span></label>
+          <input type="range" id="rot" min="0" max="360" step="1" value="0">
+        </div>
+        <div class="field">
+          <label>Seed <span class="right"><span class="val" id="seedVal">1024</span><button class="lock" data-lock="seed"><span class="open">🔓</span><span class="closed">🔒</span></button></span></label>
+          <input type="range" id="seed" min="1" max="9999" step="1" value="1024">
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Mode Lock</h2>
+        <div class="toggle-row">
+          <span>Lock mode when batching</span>
+          <div class="switch" id="modeLockToggle"><div class="knob"></div></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Fill</h2>
+        <div class="seg" id="fillSeg" style="margin-bottom:12px;">
+          <button data-fill="solid" class="active">Solid</button>
+          <button data-fill="gradient">Gradient</button>
+        </div>
+        <div class="swatches" id="swatches"></div>
+        <div class="toggle-row" style="margin-top:12px;">
+          <span>Lock palette when batching</span>
+          <div class="switch" id="paletteLockToggle"><div class="knob"></div></div>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Stroke</h2>
+        <div class="toggle-row">
+          <span>Outline</span>
+          <div class="switch on" id="strokeToggle"><div class="knob"></div></div>
+        </div>
+        <div class="field">
+          <label>Weight <span class="val" id="swVal">6</span></label>
+          <input type="range" id="sw" min="0" max="24" step="1" value="6">
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Single Shape</h2>
+        <div class="btn-row">
+          <button class="primary wide" id="randomize">↻ Randomize</button>
+          <button class="wide" id="copySvg">Copy SVG</button>
+          <button class="wide" id="dlSvg">Download</button>
+        </div>
+      </div>
+
+      <div class="group">
+        <h2>Batch</h2>
+        <div class="field">
+          <label>Amount <span class="val" id="batchCountVal">20</span></label>
+          <input type="range" id="batchCount" min="2" max="60" step="1" value="20">
+        </div>
+        <div class="btn-row">
+          <button class="primary wide" id="genBatch">⚏ Generate batch</button>
+        </div>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="wide" id="copyBatch">Copy all (Figma)</button>
+          <button class="wide" id="dlBatch">Download</button>
+        </div>
+        <p class="hint" style="margin-top:10px;">"Copy all" pastes into Figma as one frame with every shape as a separate layer. Locked properties stay constant across the set.</p>
+      </div>
+
+      <div class="group">
+        <h2>Path</h2>
+        <div class="code" id="pathCode"></div>
+      </div>
+    </aside>
+  </div>
+
+  <div class="gallery-wrap">
+    <div class="gallery-head">
+      <h3 class="display-font">Batch gallery</h3>
+      <span class="count" id="galleryCount">0 shapes</span>
+    </div>
+    <div class="gallery-empty" id="galleryEmpty">No batch yet. Lock the properties you want to keep, set an amount, and hit <strong>Generate batch</strong>. Click any shape to load it into the editor.</div>
+    <div class="gallery" id="gallery"></div>
+  </div>
+
+  <footer class="foot">Lock properties to hold them constant, then generate a batch and "Copy all" to paste every shape as a separate layer in one Figma frame.</footer>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const svg = $('art');
+  const NS = 'http://www.w3.org/2000/svg';
+
+  const palettes = [
+    { name:'ember',   fill:'#ff4d2e', g:['#ff8a3d','#ff2e6d'] },
+    { name:'cobalt',  fill:'#2e5bff', g:['#00d4ff','#2e5bff'] },
+    { name:'lime',    fill:'#3ddc84', g:['#c8ff3d','#00b36b'] },
+    { name:'grape',   fill:'#8b3dff', g:['#d43dff','#4d2eff'] },
+    { name:'sun',     fill:'#ffb703', g:['#ffe03d','#ff8a00'] },
+    { name:'ink',     fill:'#16130f', g:['#4a4038','#16130f'] },
+    { name:'rose',    fill:'#ff5d8f', g:['#ffa3c4','#ff2e6d'] },
+    { name:'teal',    fill:'#0fb5ad', g:['#3dffe0','#0f7a8f'] },
+    { name:'clay',    fill:'#c1622b', g:['#e0a35a','#8f3d1f'] },
+    { name:'sky',     fill:'#4d9fff', g:['#a3d4ff','#2e5bff'] },
+    { name:'mint',    fill:'#7fe0c4', g:['#c8fff0','#3dbf9f'] },
+    { name:'plum',    fill:'#a33d6b', g:['#d46b9f','#5a1f3d'] },
+  ];
+
+  const state = {
+    mode: 'blob',
+    points: 6,
+    irreg: 0.45,
+    round: 0.85,
+    inner: 0.45,
+    rot: 0,
+    seed: 1024,
+    fill: 'solid',
+    palette: 0,
+    stroke: true,
+    sw: 6,
+  };
+
+  // which shape properties are locked (held constant when batching / randomizing)
+  const locks = { points:false, irreg:false, round:false, inner:false, rot:false, seed:false, mode:false, palette:false };
+
+  let batch = []; // array of config snapshots
+
+  // deterministic RNG from seed
+  function makeRng(seed){
+    let s = seed % 2147483647;
+    if (s <= 0) s += 2147483646;
+    return () => (s = s * 16807 % 2147483647) / 2147483647;
+  }
+
+  const R = 130;
+
+  function radialPoints(cfg){
+    const rng = makeRng(cfg.seed);
+    const n = cfg.points;
+    const pts = [];
+    const rotRad = cfg.rot * Math.PI / 180;
+    for (let i=0; i<n; i++){
+      const ang = rotRad + (i / n) * Math.PI * 2 - Math.PI/2;
+      const jitter = 1 - cfg.irreg * rng();
+      const rad = R * jitter;
+      pts.push([Math.cos(ang)*rad, Math.sin(ang)*rad]);
+    }
+    return pts;
+  }
+
+  function starPoints(cfg){
+    const rng = makeRng(cfg.seed);
+    const n = cfg.points;
+    const pts = [];
+    const rotRad = cfg.rot * Math.PI / 180;
+    for (let i=0; i<n*2; i++){
+      const ang = rotRad + (i / (n*2)) * Math.PI * 2 - Math.PI/2;
+      const isOuter = i % 2 === 0;
+      const base = isOuter ? R : R * cfg.inner;
+      const jitter = 1 - cfg.irreg * rng() * (isOuter ? 1 : 0.5);
+      const rad = base * jitter;
+      pts.push([Math.cos(ang)*rad, Math.sin(ang)*rad]);
+    }
+    return pts;
+  }
+
+  function polyPath(pts){
+    let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for (let i=1;i<pts.length;i++) d += ` L ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)}`;
+    return d + ' Z';
+  }
+
+  // Catmull-Rom -> cubic bezier for smooth closed blob
+  function smoothPath(pts, tension){
+    const n = pts.length;
+    let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+    for (let i=0;i<n;i++){
+      const p0 = pts[(i-1+n)%n];
+      const p1 = pts[i];
+      const p2 = pts[(i+1)%n];
+      const p3 = pts[(i+2)%n];
+      const t = tension / 6;
+      const c1x = p1[0] + (p2[0]-p0[0]) * t;
+      const c1y = p1[1] + (p2[1]-p0[1]) * t;
+      const c2x = p2[0] - (p3[0]-p1[0]) * t;
+      const c2y = p2[1] - (p3[1]-p1[1]) * t;
+      d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+    }
+    return d + ' Z';
+  }
+
+  function buildPath(cfg){
+    if (cfg.mode === 'blob'){
+      return smoothPath(radialPoints(cfg), cfg.round);
+    } else if (cfg.mode === 'polygon'){
+      return polyPath(radialPoints(cfg));
+    } else {
+      return polyPath(starPoints(cfg));
+    }
+  }
+
+  // Build a standalone <svg> element string for a given config, with a unique gradient id
+  function shapeSvg(cfg, size, gradId){
+    const d = buildPath(cfg);
+    const p = palettes[cfg.palette];
+    const half = 150;
+    let fill;
+    let defs = '';
+    if (cfg.fill === 'gradient'){
+      fill = `url(#${gradId})`;
+      defs = `<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="1">`
+        + `<stop offset="0" stop-color="${p.g[0]}"/><stop offset="1" stop-color="${p.g[1]}"/>`
+        + `</linearGradient></defs>`;
+    } else {
+      fill = p.fill;
+    }
+    let strokeAttrs = '';
+    if (cfg.stroke && cfg.sw > 0){
+      strokeAttrs = ` stroke="#16130f" stroke-width="${cfg.sw}" stroke-linejoin="round"`;
+    }
+    return `<svg xmlns="${NS}" width="${size}" height="${size}" viewBox="${-half} ${-half} ${half*2} ${half*2}">`
+      + defs
+      + `<path d="${d}" fill="${fill}"${strokeAttrs}/>`
+      + `</svg>`;
+  }
+
+  function currentFill(){
+    const p = palettes[state.palette];
+    if (state.fill === 'gradient') return 'url(#grad)';
+    return p.fill;
+  }
+
+  function render(){
+    const d = buildPath(state);
+    const p = palettes[state.palette];
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+    // defs / gradient
+    const defs = document.createElementNS(NS,'defs');
+    const grad = document.createElementNS(NS,'linearGradient');
+    grad.setAttribute('id','grad');
+    grad.setAttribute('x1','0'); grad.setAttribute('y1','0');
+    grad.setAttribute('x2','1'); grad.setAttribute('y2','1');
+    [[0,p.g[0]],[1,p.g[1]]].forEach(([o,c])=>{
+      const s = document.createElementNS(NS,'stop');
+      s.setAttribute('offset', o); s.setAttribute('stop-color', c);
+      grad.appendChild(s);
+    });
+    defs.appendChild(grad);
+    svg.appendChild(defs);
+
+    const path = document.createElementNS(NS,'path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', currentFill());
+    if (state.stroke && state.sw > 0){
+      path.setAttribute('stroke', '#16130f');
+      path.setAttribute('stroke-width', state.sw);
+      path.setAttribute('stroke-linejoin','round');
+    }
+    svg.appendChild(path);
+
+    $('pathCode').textContent = d;
+    $('dimLabel').textContent = state.mode.toUpperCase() + ' · ' + state.points + 'pt';
+  }
+
+  // ---- Controls wiring ----
+  function bindRange(id, key, fmt){
+    $(id).addEventListener('input', e => {
+      state[key] = parseFloat(e.target.value);
+      if (fmt) fmt(e.target.value);
+      render();
+    });
+  }
+  bindRange('points','points', v => $('pointsVal').textContent = v);
+  bindRange('irreg','irreg', v => $('irregVal').textContent = (+v).toFixed(2));
+  bindRange('round','round', v => $('roundVal').textContent = (+v).toFixed(2));
+  bindRange('inner','inner', v => $('innerVal').textContent = (+v).toFixed(2));
+  bindRange('rot','rot', v => $('rotVal').textContent = v + '°');
+  bindRange('seed','seed', v => $('seedVal').textContent = v);
+  bindRange('sw','sw', v => $('swVal').textContent = v);
+
+  // mode segmented
+  $('modeSeg').querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      $('modeSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.mode = b.dataset.mode;
+      $('innerField').style.display = state.mode === 'star' ? 'block' : 'none';
+      render();
+    });
+  });
+
+  // fill segmented
+  $('fillSeg').querySelectorAll('button').forEach(b => {
+    b.addEventListener('click', () => {
+      $('fillSeg').querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      state.fill = b.dataset.fill;
+      render();
+    });
+  });
+
+  // swatches
+  const sw = $('swatches');
+  palettes.forEach((p,i) => {
+    const el = document.createElement('div');
+    el.className = 'swatch' + (i===0?' active':'');
+    el.style.background = `linear-gradient(135deg, ${p.g[0]}, ${p.g[1]})`;
+    el.title = p.name;
+    el.addEventListener('click', () => {
+      sw.querySelectorAll('.swatch').forEach(x=>x.classList.remove('active'));
+      el.classList.add('active');
+      state.palette = i;
+      render();
+    });
+    sw.appendChild(el);
+  });
+
+  // stroke toggle
+  $('strokeToggle').addEventListener('click', () => {
+    state.stroke = !state.stroke;
+    $('strokeToggle').classList.toggle('on', state.stroke);
+    render();
+  });
+
+  // ---- Locks ----
+  document.querySelectorAll('.lock').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.lock;
+      locks[key] = !locks[key];
+      btn.classList.toggle('locked', locks[key]);
+    });
+  });
+  $('modeLockToggle').addEventListener('click', () => {
+    locks.mode = !locks.mode;
+    $('modeLockToggle').classList.toggle('on', locks.mode);
+  });
+  $('paletteLockToggle').addEventListener('click', () => {
+    locks.palette = !locks.palette;
+    $('paletteLockToggle').classList.toggle('on', locks.palette);
+  });
+
+  // Reflect a config into the editor sliders/labels
+  function applyConfigToUI(cfg){
+    Object.assign(state, cfg);
+    $('modeSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('active', x.dataset.mode===state.mode));
+    $('innerField').style.display = state.mode === 'star' ? 'block' : 'none';
+    $('fillSeg').querySelectorAll('button').forEach(x=>x.classList.toggle('active', x.dataset.fill===state.fill));
+    $('points').value = state.points; $('pointsVal').textContent = state.points;
+    $('irreg').value = state.irreg;   $('irregVal').textContent = state.irreg.toFixed(2);
+    $('round').value = state.round;   $('roundVal').textContent = state.round.toFixed(2);
+    $('inner').value = state.inner;   $('innerVal').textContent = state.inner.toFixed(2);
+    $('rot').value = state.rot;       $('rotVal').textContent = state.rot + '°';
+    $('seed').value = state.seed;     $('seedVal').textContent = state.seed;
+    $('sw').value = state.sw;         $('swVal').textContent = state.sw;
+    $('strokeToggle').classList.toggle('on', state.stroke);
+    sw.querySelectorAll('.swatch').forEach((x,i)=>x.classList.toggle('active', i===state.palette));
+    render();
+  }
+
+  // Produce one randomized config, honoring locks (locked props copied from current state)
+  function randomConfig(){
+    const modes = ['blob','blob','polygon','star'];
+    const cfg = {
+      mode:   locks.mode    ? state.mode    : modes[Math.floor(Math.random()*modes.length)],
+      points: locks.points  ? state.points  : 3 + Math.floor(Math.random()*9),
+      irreg:  locks.irreg   ? state.irreg   : +(Math.random()*0.8).toFixed(2),
+      round:  locks.round   ? state.round   : +(0.6 + Math.random()*0.4).toFixed(2),
+      inner:  locks.inner   ? state.inner   : +(0.3 + Math.random()*0.5).toFixed(2),
+      rot:    locks.rot     ? state.rot     : Math.floor(Math.random()*360),
+      seed:   locks.seed    ? state.seed    : 1 + Math.floor(Math.random()*9999),
+      palette:locks.palette ? state.palette : Math.floor(Math.random()*palettes.length),
+      fill:   state.fill,
+      stroke: state.stroke,
+      sw:     state.sw,
+    };
+    return cfg;
+  }
+
+  // randomize single
+  $('randomize').addEventListener('click', () => {
+    applyConfigToUI(randomConfig());
+  });
+
+  // ---- Batch ----
+  $('batchCount').addEventListener('input', e => {
+    $('batchCountVal').textContent = e.target.value;
+  });
+
+  function renderGallery(){
+    const g = $('gallery');
+    g.innerHTML = '';
+    $('galleryEmpty').style.display = batch.length ? 'none' : 'block';
+    $('galleryCount').textContent = batch.length + (batch.length===1?' shape':' shapes');
+    batch.forEach((cfg, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.innerHTML = `<span class="idx">${String(i+1).padStart(2,'0')}</span>` + shapeSvg(cfg, 200, 'g'+i);
+      cell.title = 'Load into editor';
+      cell.addEventListener('click', () => {
+        applyConfigToUI(Object.assign({}, cfg));
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+      g.appendChild(cell);
+    });
+  }
+
+  $('genBatch').addEventListener('click', () => {
+    const count = parseInt($('batchCount').value, 10);
+    batch = [];
+    for (let i=0;i<count;i++) batch.push(randomConfig());
+    renderGallery();
+    $('gallery').scrollIntoView({ behavior:'smooth', block:'start' });
+  });
+
+  // Build a single SVG frame containing all batch shapes as separate groups (Figma-friendly)
+  function batchFrameSvg(){
+    if (!batch.length) return '';
+    const tile = 300;       // per-shape cell in the frame
+    const gap = 40;
+    const pad = 40;
+    const cols = Math.ceil(Math.sqrt(batch.length));
+    const rows = Math.ceil(batch.length / cols);
+    const W = pad*2 + cols*tile + (cols-1)*gap;
+    const H = pad*2 + rows*tile + (rows-1)*gap;
+
+    let defs = '';
+    let body = '';
+    batch.forEach((cfg, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = pad + col*(tile+gap);
+      const y = pad + row*(tile+gap);
+      const d = buildPath(cfg);
+      const p = palettes[cfg.palette];
+      let fill;
+      if (cfg.fill === 'gradient'){
+        const gid = 'grad'+i;
+        fill = `url(#${gid})`;
+        defs += `<linearGradient id="${gid}" x1="0" y1="0" x2="1" y2="1">`
+          + `<stop offset="0" stop-color="${p.g[0]}"/><stop offset="1" stop-color="${p.g[1]}"/>`
+          + `</linearGradient>`;
+      } else {
+        fill = p.fill;
+      }
+      let strokeAttrs = '';
+      if (cfg.stroke && cfg.sw > 0){
+        strokeAttrs = ` stroke="#16130f" stroke-width="${cfg.sw}" stroke-linejoin="round"`;
+      }
+      // translate group so the shape (centered at 0,0 in a 300 box) sits in its tile
+      body += `<g transform="translate(${x+tile/2} ${y+tile/2})">`
+        + `<path d="${d}" fill="${fill}"${strokeAttrs}/>`
+        + `</g>`;
+    });
+
+    return `<?xml version="1.0" encoding="UTF-8"?>\n`
+      + `<svg xmlns="${NS}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`
+      + (defs ? `<defs>${defs}</defs>` : '')
+      + body
+      + `</svg>`;
+  }
+
+  $('copyBatch').addEventListener('click', async () => {
+    const b = $('copyBatch'); const t = b.textContent;
+    if (!batch.length){ b.textContent = 'Generate first'; setTimeout(()=>b.textContent=t,1200); return; }
+    try {
+      await navigator.clipboard.writeText(batchFrameSvg());
+      b.textContent = '✓ Copied ' + batch.length;
+      setTimeout(()=>b.textContent=t, 1400);
+    } catch(e){
+      b.textContent = 'Copy failed'; setTimeout(()=>b.textContent=t,1400);
+    }
+  });
+
+  $('dlBatch').addEventListener('click', () => {
+    const b = $('dlBatch'); const t = b.textContent;
+    if (!batch.length){ b.textContent = 'Generate first'; setTimeout(()=>b.textContent=t,1200); return; }
+    const blob = new Blob([batchFrameSvg()], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'blob-batch-' + batch.length + '.svg';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  function svgString(){
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', NS);
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + clone.outerHTML;
+  }
+
+  $('copySvg').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(svgString());
+      const b = $('copySvg'); const t = b.textContent;
+      b.textContent = '✓ Copied'; setTimeout(()=>b.textContent=t, 1200);
+    } catch(e){
+      const b = $('copySvg'); b.textContent = 'Copy failed';
+    }
+  });
+
+  $('dlSvg').addEventListener('click', () => {
+    const blob = new Blob([svgString()], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'blob-' + state.seed + '.svg';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
