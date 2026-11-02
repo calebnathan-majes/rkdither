@@ -309,6 +309,9 @@ const BUILTIN = [
     gradient: { type: 'edge', curve: 1.6 }, turb: { on: true, scale: 2, amount: .04, detail: 3, breakup: .35 } }],
   ['Cream dissolve', { mode: 'gradient', ink: '#FEFDF1', preview: '#1D1B1D', look: { gen: 'cream', seed: 1 }, density: 1,
     gradient: { type: 'linear', curve: 1.2 }, turb: { on: true, scale: 3, amount: .07, detail: 5, breakup: .6 } }],
+  ['Footer band', { mode: 'photo', ink: '#1D1B1D', photo: { fade: 'both', cy: .5, start: .3, length: .55 },
+    turb: { on: true, scale: 3, amount: .08, detail: 5, breakup: .75 },
+    look: { gen: 'photo', seed: 1, base: { scale: 3, amount: .08, breakup: .75, start: .3, length: .55, cy: .5, aspect: 1 } } }],
   ['Footer dissolve', { mode: 'photo', ink: '#1D1B1D', photo: { fade: 'around', cy: .45, aspect: 1.15, start: .2, length: .34 },
     turb: { on: true, scale: 3, amount: .09, detail: 5, breakup: .75 },
     look: { gen: 'photo', seed: 1, base: { scale: 3, amount: .09, breakup: .75, start: .2, length: .34, cy: .45, aspect: 1.15 } } }],
@@ -419,9 +422,11 @@ function compute(st, px) {
         if (ph.fade !== 'none') {
           let t;
           if (ph.fade === 'around') { const a = Math.sqrt(ph.aspect); t = Math.hypot((wx - ph.cx * wS) / a, (wy - ph.cy * hS) * a); }
+          else if (ph.fade === 'both') t = Math.abs(wy / hS - ph.cy) * 2;
           else { const u = wx / wS, v = wy / hS; t = ph.fade === 'down' ? v : ph.fade === 'up' ? 1 - v : ph.fade === 'right' ? u : 1 - u; }
           m = 1 - smooth(ph.start, ph.start + Math.max(ph.length, .01), t);
           if (br > 0) m = clamp(m + (bn - .5) * br * 1.6 * (1 - m * m));
+          if (ph.fade === 'both') m *= smooth(0, .05, Math.min(y, hS - y) / hS);
         }
         d = dens * m;
       } else {
@@ -446,6 +451,7 @@ function compute(st, px) {
         if (j + 1 < gh) { if (i - dx >= 0 && i - dx < gw) D[k + gw - dx] += er * 3 / 16; D[k + gw] += er * 5 / 16; if (i + dx >= 0 && i + dx < gw) D[k + gw + dx] += er / 16; }
       }
     }
+    if (ph.fade === 'both') for (let i = 0; i < gw; i++) { ink[i] = 0; ink[gw + i] = 0; ink[(gh - 1) * gw + i] = 0; ink[(gh - 2) * gw + i] = 0; }
     if (st.soft) { // keep diffusion from leaving specks on the border
       for (let i = 0; i < gw; i++) { ink[i] = 0; ink[(gh - 1) * gw + i] = 0; }
       for (let j = 0; j < gh; j++) { ink[j * gw] = 0; ink[j * gw + gw - 1] = 0; }
@@ -532,6 +538,7 @@ function handles() {
     if (ph.fade === 'down') L.push({ id: 'f0', x: W / 2, y: a * H, kind: 'line', axis: 'y' }, { id: 'f1', x: W / 2, y: b * H, kind: 'line', axis: 'y' });
     if (ph.fade === 'up') L.push({ id: 'f0', x: W / 2, y: (1 - a) * H, kind: 'line', axis: 'y' }, { id: 'f1', x: W / 2, y: (1 - b) * H, kind: 'line', axis: 'y' });
     if (ph.fade === 'right') L.push({ id: 'f0', x: a * W, y: H / 2, kind: 'line', axis: 'x' }, { id: 'f1', x: b * W, y: H / 2, kind: 'line', axis: 'x' });
+    if (ph.fade === 'both') { const c = ph.cy * H; L.push({ id: 'f0', x: W / 2, y: c - a / 2 * H, kind: 'line', axis: 'y' }, { id: 'f0b', x: W / 2, y: c + a / 2 * H, kind: 'line', axis: 'y' }, { id: 'f1', x: W / 2, y: c - b / 2 * H, kind: 'line', axis: 'y' }, { id: 'f1b', x: W / 2, y: c + b / 2 * H, kind: 'line', axis: 'y' }); }
     if (ph.fade === 'left') L.push({ id: 'f0', x: (1 - a) * W, y: H / 2, kind: 'line', axis: 'x' }, { id: 'f1', x: (1 - b) * W, y: H / 2, kind: 'line', axis: 'x' });
   }
   return L;
@@ -572,7 +579,7 @@ function drawOverlay() {
     ell(ph.start, active === 'f0', false); ell(ph.start + ph.length, active === 'f1', true);
     knob(c.x, c.y, active === 'fc'); square(at('f0').x, at('f0').y); square(at('f1').x, at('f1').y);
   } else if (S.mode === 'photo') {
-    hs.forEach(h => { if (h.axis === 'y') line(0, h.y, W, h.y, active === h.id, h.id === 'f1'); else line(h.x, 0, h.x, H, active === h.id, h.id === 'f1'); knob(h.x, h.y, active === h.id, h.id === 'f0'); });
+    hs.forEach(h => { const k = h.id.slice(0, 2), on = active === k, end = k === 'f1'; if (h.axis === 'y') line(0, h.y, W, h.y, on, end); else line(h.x, 0, h.x, H, on, end); knob(h.x, h.y, on, !end); });
   }
 }
 function pt(e) { const r = ov.getBoundingClientRect(); return { x: (e.clientX - r.left) / viewScale, y: (e.clientY - r.top) / viewScale }; }
@@ -603,7 +610,7 @@ ov.addEventListener('pointerdown', e => {
       selW = S.wash.lobes.length - 1; drag = { t: 'wa', ox: 0, oy: 0 };
     }
   } else if (S.mode === 'photo') {
-    if (hit) drag = { t: hit.id, ox: m.x - hit.x, oy: m.y - hit.y };
+    if (hit) drag = { t: hit.id.slice(0, 2), ox: m.x - hit.x, oy: m.y - hit.y };
     else { drag = { t: 'pan', x: m.x, y: m.y }; ov.classList.add('grabbing'); }
   }
   active = drag ? drag.t : null;
@@ -628,7 +635,7 @@ ov.addEventListener('pointermove', e => {
     case 'wr': { const l = S.wash.lobes[selW]; l.w = clamp(Math.hypot(m.x - l.ax * W, m.y - l.ay * H) / (S0 * S.wash.spread), .01, .8); break; }
     case 'fc': ph.cx = clamp((m.x - drag.ox) / W, -.2, 1.2); ph.cy = clamp((m.y - drag.oy) / H, -.2, 1.2); break;
     case 'f0': case 'f1': {
-      const t = ph.fade === 'around' ? (m.x - ph.cx * W) / (Math.sqrt(ph.aspect) * S0) : ph.fade === 'down' ? m.y / H : ph.fade === 'up' ? 1 - m.y / H : ph.fade === 'right' ? m.x / W : 1 - m.x / W;
+      const t = ph.fade === 'both' ? Math.abs(m.y / H - ph.cy) * 2 : ph.fade === 'around' ? (m.x - ph.cx * W) / (Math.sqrt(ph.aspect) * S0) : ph.fade === 'down' ? m.y / H : ph.fade === 'up' ? 1 - m.y / H : ph.fade === 'right' ? m.x / W : 1 - m.x / W;
       if (drag.t === 'f0') { const end = ph.start + ph.length; ph.start = clamp(t, -.2, end - .02); ph.length = end - ph.start; }
       else ph.length = clamp(t - ph.start, .02, 1.2);
       syncUI(true); break;
@@ -716,9 +723,12 @@ $('#panel').innerHTML = `
 <section class="sec" data-in="photo">
   <div class="sec-h"><h2>Fade</h2></div>
   <div class="stack">
-    ${seg('photo.fade', [['none', 'None'], ['around', 'Around'], ['down', 'Down'], ['up', 'Up'], ['left', 'Left'], ['right', 'Right']], 'Fade direction').replace('class="seg"', 'class="seg tight"')}
+    <select class="field" data-sel="photo.fade" aria-label="Fade direction">
+      <option value="both">Top + bottom</option><option value="around">Around</option><option value="down">Down</option><option value="up">Up</option><option value="left">Left</option><option value="right">Right</option><option value="none">None</option>
+    </select>
     <div data-fade>
       <div data-around>${sl('Shape', 'photo.aspect', .4, 2.5, .01, 'dec2')}</div>
+      <div data-band>${sl('Center', 'photo.cy', .1, .9, .01, 'pct')}</div>
       ${sl('Start', 'photo.start', -.2, 1, .01, 'pct')}
       ${sl('Length', 'photo.length', .02, 1.2, .01, 'pct')}
     </div>
@@ -823,6 +833,8 @@ function syncUI(light) {
   $$('[data-mode-btn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.modeBtn === S.mode)));
   $$('[data-in]').forEach(s => s.hidden = s.dataset.in !== S.mode);
   $('[data-fade]').hidden = S.photo.fade === 'none';
+  $('[data-band]').hidden = S.photo.fade !== 'both';
+  $$('select[data-sel]').forEach(x => x.value = getP(x.dataset.sel));
   $('[data-around]').hidden = S.photo.fade !== 'around';
   $('#readout').textContent = W + ' × ' + H; $('#dimW').value = W; $('#dimH').value = H;
   $('#turbTitle').textContent = S.mode === 'photo' ? 'Dissolve' : 'Turbulence';
@@ -852,6 +864,7 @@ panel.addEventListener('input', e => {
 panel.addEventListener('change', e => {
   const t = e.target;
   if (t.type === 'checkbox' && t.dataset.bind) { setP(t.dataset.bind, t.checked); syncUI(); drawOverlay(); req(); }
+  if (t.dataset.sel) { setP(t.dataset.sel, t.value); syncUI(); drawOverlay(); req(); }
 });
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
