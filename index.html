@@ -74,6 +74,9 @@ select.field{appearance:none;-webkit-appearance:none;padding-right:26px;cursor:p
   background-position:calc(100% - 13px) 12px,calc(100% - 9px) 12px;background-size:4px 4px;background-repeat:no-repeat}
 select.field option{background:var(--bg);color:var(--ink)}
 .preset-row{display:flex;gap:6px;align-items:center}
+.dims{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.dims label{display:grid;grid-template-columns:14px 1fr;align-items:center;gap:6px;color:var(--muted)}
+.seg.tight button{padding:0 4px;font-size:12px}
 .preset-row .field{flex:1;min-width:0}
 .preset-row + .preset-row{margin-top:8px}
 .var{margin-top:10px}
@@ -145,11 +148,12 @@ input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(-
   <header class="top">
     <div class="seg" id="modeSeg" role="group" aria-label="Mode">
       <button type="button" data-mode-btn="blob">Blob</button>
+      <button type="button" data-mode-btn="wash">Wash</button>
       <button type="button" data-mode-btn="gradient">Gradient</button>
       <button type="button" data-mode-btn="photo">Photo</button>
     </div>
     <div class="spacer"></div>
-    <span class="size-readout">1688 × 1000</span>
+    <span class="size-readout" id="readout"></span>
     <button class="btn btn-secondary" id="copyBtn" type="button">Copy PNG</button>
     <button class="btn btn-primary" id="exp1" type="button">Export PNG</button>
   </header>
@@ -184,7 +188,10 @@ const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
 function merge(a, b) { for (const k in b) { if (isObj(b[k]) && isObj(a[k])) merge(a[k], b[k]); else a[k] = clone(b[k]); } return a; }
 
 /* Fixed output */
-const W = 1688, H = 1000, PX = 3, S0 = Math.max(W, H), wS = W / S0, hS = H / S0;
+const PX = 3;
+let W = 1688, H = 1000, S0 = 1688, wS = 1, hS = 1;
+function setDims(w, h) { W = w; H = h; S0 = Math.max(W, H); wS = W / S0; hS = H / S0; }
+try { const d = JSON.parse(localStorage.getItem('dither-size') || 'null'); setDims(d && d.w ? d.w : 1688, d && d.h ? d.h : 1000); } catch (e) { setDims(1688, 1000); }
 
 /* ---------- Noise ---------- */
 function rng(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -216,8 +223,9 @@ const PREVIEWS = [['#FEFDF1', 'Cream'], ['#1D1B1D', 'Charcoal'], ['#FFFFFF', 'Wh
 const BASE = {
   mode: 'blob', ink: '#A8D4F2', preview: '#FEFDF1', transparent: true, soft: false, look: null, density: 1,
   blob: { points: [], merge: .7, feather: .9 },
+  wash: { lobes: [], flow: -20, stretch: 3, spread: 1, curve: 1.2 },
   gradient: { type: 'edge', ax: .5, ay: .3, bx: .5, by: .95, cx: .5, cy: .5, size: .4, edgeW: { t: 0, r: .28, b: .28, l: .28 }, curve: 1.4, invert: false },
-  photo: { brightness: 0, contrast: .2, invert: false, fade: 'down', start: .3, length: .5, zoom: 1, ox: 0, oy: 0 },
+  photo: { brightness: 0, contrast: .2, invert: false, fade: 'down', start: .3, length: .5, zoom: 1, ox: 0, oy: 0, cx: .5, cy: .5, aspect: 1 },
   turb: { on: true, scale: 3, amount: .05, detail: 4, breakup: .3, seed: 7 }
 };
 const P = (x, y, r, s = 1) => ({ x, y, r, s });
@@ -255,10 +263,32 @@ function layoutBlobs(st, n) {
   const key = st.look && GEN[st.look.gen] ? st.look.gen : 'glow';
   st.blob.points = locked.concat(GEN[key](st.look ? st.look.seed : 1, need));
 }
+function WGEN(seed) {
+  const r = rng(seed * 8191 + 37), flow = -40 + r() * 80, fr = flow * Math.PI / 180, lobes = [];
+  const corners = r() < .5 ? [[1, 0], [0, 1]] : [[0, 0], [1, 1]];
+  const lobe = (ax, ay, L, w, s) => {
+    let dx = Math.cos(fr), dy = Math.sin(fr);
+    if (dx * (.5 - ax) + dy * (.5 - ay) < 0) { dx = -dx; dy = -dy; }
+    const tw = (r() - .5) * .5, c = Math.cos(tw), sn = Math.sin(tw), ex = dx * c - dy * sn, ey = dx * sn + dy * c;
+    lobes.push({ ax, ay, bx: ax + ex * L, by: ay + ey * L * wS / hS, w, s });
+  };
+  corners.forEach(([cx, cy]) => lobe(cx ? .9 + r() * .15 : .1 - r() * .15, cy ? .9 + r() * .15 : .1 - r() * .15, .35 + r() * .35, .14 + r() * .12, .85 + r() * .15));
+  if (r() < .55) { const e = Math.floor(r() * 4), t = .2 + r() * .6; lobe(e === 0 ? t : e === 1 ? 1.02 : e === 2 ? t : -.02, e === 0 ? -.02 : e === 1 ? t : e === 2 ? 1.02 : t, .18 + r() * .2, .07 + r() * .06, .6 + r() * .25); }
+  return { lobes, flow: Math.round(flow) };
+}
+function PGEN(seed, b) {
+  const r = rng(seed * 5167 + 7);
+  return {
+    turb: { seed, amount: b.amount * (.6 + r() * .9), breakup: clamp(b.breakup + (r() - .5) * .35, .2, .95), scale: b.scale * (.7 + r() * .7) },
+    photo: { start: b.start + (r() - .5) * .16, length: b.length * (.75 + r() * .5), cx: .5 + (r() - .5) * .12, cy: b.cy + (r() - .5) * .1, aspect: b.aspect * (.8 + r() * .4) }
+  };
+}
 function applyLook(st) {
   if (!st.look) return st;
   st.turb.seed = st.look.seed;
   if (st.mode === 'blob') layoutBlobs(st, st.blob.points.length || 2);
+  else if (st.mode === 'wash') merge(st.wash, WGEN(st.look.seed));
+  else if (st.mode === 'photo' && st.look.base) merge(st, PGEN(st.look.seed, st.look.base));
   else if (GGEN[st.look.gen]) merge(st.gradient, GGEN[st.look.gen](st.look.seed));
   return st;
 }
@@ -269,16 +299,25 @@ const BUILTIN = [
     blob: { merge: .6, feather: .8 }, turb: { on: true, scale: 4, amount: .07, detail: 5, breakup: .55 } }],
   ['Dark cloud', { mode: 'blob', ink: '#333133', preview: '#1D1B1D', look: { gen: 'cloud', seed: 1 }, density: .7,
     blob: { merge: .8, feather: 1 }, turb: { on: true, scale: 2.5, amount: .08, detail: 5, breakup: .5 } }],
+  ['Drift blue', { mode: 'wash', ink: '#A8D4F2', look: { gen: 'wash', seed: 1 }, density: .75,
+    wash: { stretch: 3, spread: 1, curve: 1.2 }, turb: { on: true, scale: 3, amount: .06, detail: 5, breakup: .55 } }],
+  ['Drift yellow', { mode: 'wash', ink: '#F4E49C', look: { gen: 'wash', seed: 2 }, density: .8,
+    wash: { stretch: 3, spread: 1, curve: 1.2 }, turb: { on: true, scale: 3, amount: .06, detail: 5, breakup: .55 } }],
   ['Edge wash blue', { mode: 'gradient', ink: '#A8D4F2', look: { gen: 'edge', seed: 1 }, density: .5,
     gradient: { type: 'edge', curve: 1.6 }, turb: { on: true, scale: 2, amount: .04, detail: 3, breakup: .35 } }],
   ['Edge wash yellow', { mode: 'gradient', ink: '#F4E49C', look: { gen: 'edge', seed: 2 }, density: .55,
     gradient: { type: 'edge', curve: 1.6 }, turb: { on: true, scale: 2, amount: .04, detail: 3, breakup: .35 } }],
   ['Cream dissolve', { mode: 'gradient', ink: '#FEFDF1', preview: '#1D1B1D', look: { gen: 'cream', seed: 1 }, density: 1,
     gradient: { type: 'linear', curve: 1.2 }, turb: { on: true, scale: 3, amount: .07, detail: 5, breakup: .6 } }],
+  ['Footer dissolve', { mode: 'photo', ink: '#1D1B1D', photo: { fade: 'around', cy: .45, aspect: 1.15, start: .2, length: .34 },
+    turb: { on: true, scale: 3, amount: .09, detail: 5, breakup: .75 },
+    look: { gen: 'photo', seed: 1, base: { scale: 3, amount: .09, breakup: .75, start: .2, length: .34, cy: .45, aspect: 1.15 } } }],
   ['Dissolve down', { mode: 'photo', ink: '#1D1B1D', photo: { fade: 'down', start: .3, length: .5 },
-    turb: { on: true, scale: 3, amount: .06, detail: 5, breakup: .7, seed: 11 } }],
+    turb: { on: true, scale: 3, amount: .06, detail: 5, breakup: .7 },
+    look: { gen: 'photo', seed: 1, base: { scale: 3, amount: .06, breakup: .7, start: .3, length: .5, cy: .5, aspect: 1 } } }],
   ['Dissolve up', { mode: 'photo', ink: '#1D1B1D', photo: { fade: 'up', start: .3, length: .5 },
-    turb: { on: true, scale: 3, amount: .06, detail: 5, breakup: .7, seed: 12 } }],
+    turb: { on: true, scale: 3, amount: .06, detail: 5, breakup: .7 },
+    look: { gen: 'photo', seed: 2, base: { scale: 3, amount: .06, breakup: .7, start: .3, length: .5, cy: .5, aspect: 1 } } }],
   ['Full photo', { mode: 'photo', ink: '#1D1B1D', photo: { fade: 'none' },
     turb: { on: false, scale: 3, amount: .06, detail: 5, breakup: .5, seed: 13 } }]
 ].map(([name, o]) => ({ name, data: applyLook(merge(clone(BASE), o)) }));
@@ -291,7 +330,7 @@ const saveCustom = () => { try { localStorage.setItem(STORE, JSON.stringify(cust
 let S = clone(BUILTIN[0].data);
 let currentPreset = 'b:0';
 let presetTurb = clone(S.turb);
-let sel = -1, showH = true, photo = null, turbOpen = false;
+let sel = -1, selW = -1, showH = true, photo = null, turbOpen = false;
 const modeCache = {};
 
 /* ---------- Photo ---------- */
@@ -347,7 +386,19 @@ function compute(st, px) {
       };
     }
     shape = (x, y) => { let b = base(x, y); if (g.invert) b = 1 - b; return Math.pow(b, g.curve); };
+  } else if (mode === 'wash') {
+    const wv = st.wash, sp = wv.spread;
+    const LB = wv.lobes.map(l => { const ax = l.ax * wS, ay = l.ay * hS, vx = l.bx * wS - ax, vy = l.by * hS - ay; return { ax, ay, vx, vy, l2: (vx * vx + vy * vy) || 1e-6, w: Math.max(l.w * sp, .005), s: clamp(l.s) }; });
+    shape = (x, y) => {
+      let keep = 1;
+      for (let i = 0; i < LB.length; i++) {
+        const l = LB[i], t = clamp(((x - l.ax) * l.vx + (y - l.ay) * l.vy) / l.l2), qx = l.ax + t * l.vx - x, qy = l.ay + t * l.vy - y, ww = l.w * (1 - .45 * t);
+        keep *= 1 - l.s * Math.exp(-0.6931 * (qx * qx + qy * qy) / (ww * ww));
+      }
+      return Math.pow(1 - keep, wv.curve);
+    };
   }
+  const aniso = mode === 'wash', fa = aniso ? st.wash.flow * Math.PI / 180 : 0, fc = Math.cos(fa), fs = Math.sin(fa), sx = aniso ? sc / Math.max(st.wash.stretch, 1) : sc;
   let L = null; const ph = st.photo;
   if (mode === 'photo') { if (!photo) return { gw, gh, ink: new Uint8Array(N), empty: true }; L = getLum(gw, gh); }
   const pc = 1 + ph.contrast * 2;
@@ -356,17 +407,19 @@ function compute(st, px) {
     const y = ((j + .5) * px) / S0;
     for (let i = 0; i < gw; i++) {
       const x = ((i + .5) * px) / S0, k = j * gw + i;
+      const nx = aniso ? x * fc + y * fs : x, ny = aniso ? -x * fs + y * fc : y;
       let wx = x, wy = y;
-      if (amt > 0) { wx += amt * fbm(n1, x * sc + 5.2, y * sc + 1.3, oct) * 1.6; wy += amt * fbm(n1, x * sc + 1.7, y * sc + 9.2, oct) * 1.6; }
-      const bn = br > 0 ? clamp(.5 + fbm(n2, x * sc * 2.1 + 3.3, y * sc * 2.1 + 7.7, oct) * 1.4) : .5;
+      if (amt > 0) { wx += amt * fbm(n1, nx * sx + 5.2, ny * sc + 1.3, oct) * 1.6; wy += amt * fbm(n1, nx * sx + 1.7, ny * sc + 9.2, oct) * 1.6; }
+      const bn = br > 0 ? clamp(.5 + fbm(n2, nx * sx * 2.1 + 3.3, ny * sc * 2.1 + 7.7, oct) * 1.4) : .5;
       let d;
       if (mode === 'photo') {
         const lum = clamp((L[k] - .5) * pc + .5 + ph.brightness);
         const dens = ph.invert ? lum : 1 - lum;
         let m = 1;
         if (ph.fade !== 'none') {
-          const u = wx / wS, v = wy / hS;
-          const t = ph.fade === 'down' ? v : ph.fade === 'up' ? 1 - v : ph.fade === 'right' ? u : 1 - u;
+          let t;
+          if (ph.fade === 'around') { const a = Math.sqrt(ph.aspect); t = Math.hypot((wx - ph.cx * wS) / a, (wy - ph.cy * hS) * a); }
+          else { const u = wx / wS, v = wy / hS; t = ph.fade === 'down' ? v : ph.fade === 'up' ? 1 - v : ph.fade === 'right' ? u : 1 - u; }
           m = 1 - smooth(ph.start, ph.start + Math.max(ph.length, .01), t);
           if (br > 0) m = clamp(m + (bn - .5) * br * 1.6 * (1 - m * m));
         }
@@ -413,19 +466,21 @@ function fit() {
   const aw = Math.max(40, r.width - pad * 2), ah = Math.max(40, r.height - pad * 2 - (m ? 40 : 30));
   viewScale = Math.min(aw / W, ah / H);
   art.style.width = (W * viewScale) + 'px'; art.style.height = (H * viewScale) + 'px';
-  if (last) { cv.style.width = (last.gw * PX * viewScale) + 'px'; cv.style.height = (last.gh * PX * viewScale) + 'px'; }
+  if (last) { cv.style.width = (last.gw * last.px * viewScale) + 'px'; cv.style.height = (last.gh * last.px * viewScale) + 'px'; }
   drawOverlay();
 }
 function req() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; render(); }); }
+let sliding = false;
 function render() {
-  const r = compute(S, PX);
+  const cells = (W / PX) * (H / PX), draft = (drag || sliding) && cells > 260000 ? Math.ceil(Math.sqrt(cells / 260000)) : 1;
+  const r = compute(S, PX * draft); r.px = PX * draft;
   $('#empty').hidden = !r.empty; art.hidden = !!r.empty;
   cv.width = r.gw; cv.height = r.gh;
   const id = ctx.createImageData(r.gw, r.gh), [R, G, B] = hexRgb(S.ink), d = id.data;
   for (let k = 0; k < r.ink.length; k++) if (r.ink[k]) { const o = k * 4; d[o] = R; d[o + 1] = G; d[o + 2] = B; d[o + 3] = 255; }
   ctx.putImageData(id, 0, 0);
   last = r;
-  cv.style.width = (r.gw * PX * viewScale) + 'px'; cv.style.height = (r.gh * PX * viewScale) + 'px';
+  cv.style.width = (r.gw * r.px * viewScale) + 'px'; cv.style.height = (r.gh * r.px * viewScale) + 'px';
 }
 
 /* ---------- On-canvas handles ---------- */
@@ -466,6 +521,12 @@ function handles() {
       L.push({ id: 'et', x: W / 2, y: Math.max(E.t * S0, u) }, { id: 'eb', x: W / 2, y: H - Math.max(E.b * S0, u) },
         { id: 'el', x: Math.max(E.l * S0, u), y: H / 2 }, { id: 'er', x: W - Math.max(E.r * S0, u), y: H / 2 });
     }
+  } else if (S.mode === 'wash') {
+    S.wash.lobes.forEach((l, i) => L.push({ id: 'wa' + i, x: l.ax * W, y: l.ay * H }, { id: 'wb' + i, x: l.bx * W, y: l.by * H }));
+    const l = S.wash.lobes[selW]; if (l) L.push({ id: 'wr', x: l.ax * W + l.w * S.wash.spread * S0, y: l.ay * H });
+  } else if (S.mode === 'photo' && ph.fade === 'around') {
+    const a = Math.sqrt(ph.aspect), cx = ph.cx * W, cy = ph.cy * H;
+    L.push({ id: 'fc', x: cx, y: cy }, { id: 'f0', x: cx + ph.start * a * S0, y: cy }, { id: 'f1', x: cx + (ph.start + ph.length) * a * S0, y: cy });
   } else if (S.mode === 'photo' && ph.fade !== 'none') {
     const a = ph.start, b = ph.start + ph.length;
     if (ph.fade === 'down') L.push({ id: 'f0', x: W / 2, y: a * H, kind: 'line', axis: 'y' }, { id: 'f1', x: W / 2, y: b * H, kind: 'line', axis: 'y' });
@@ -497,6 +558,19 @@ function drawOverlay() {
       [['et', 0, E.t * S0, W, E.t * S0], ['eb', 0, H - E.b * S0, W, H - E.b * S0], ['el', E.l * S0, 0, E.l * S0, H], ['er', W - E.r * S0, 0, W - E.r * S0, H]]
         .forEach(([id, x1, y1, x2, y2]) => { const k = id[1]; if (E[k] > 0) line(x1, y1, x2, y2, active === id, true); const h = at(id); knob(h.x, h.y, active === id, E[k] > 0); });
     }
+  } else if (S.mode === 'wash') {
+    S.wash.lobes.forEach((l, i) => {
+      const ax = l.ax * W, ay = l.ay * H, on = i === selW;
+      ring(ax, ay, l.w * S.wash.spread * S0, on, true);
+      line(ax, ay, l.bx * W, l.by * H, on, true);
+      knob(ax, ay, on, true); knob(l.bx * W, l.by * H, on && active === 'wb', false);
+    });
+    if (at('wr')) square(at('wr').x, at('wr').y);
+  } else if (S.mode === 'photo' && S.photo.fade === 'around') {
+    const ph = S.photo, a = Math.sqrt(ph.aspect), c = at('fc');
+    const ell = (r, on, dash) => { const d = dash ? { 'stroke-dasharray': '5 5' } : {}; el('ellipse', { cx: c.x, cy: c.y, rx: Math.max(r, 0) * a * S0, ry: Math.max(r, 0) / a * S0, fill: 'none', stroke: 'rgba(255,255,255,.75)', 'stroke-width': 3, ...NSS, ...d }); el('ellipse', { cx: c.x, cy: c.y, rx: Math.max(r, 0) * a * S0, ry: Math.max(r, 0) / a * S0, fill: 'none', stroke: on ? '#FF0040' : 'rgba(29,27,29,.75)', 'stroke-width': 1, ...NSS, ...d }); };
+    ell(ph.start, active === 'f0', false); ell(ph.start + ph.length, active === 'f1', true);
+    knob(c.x, c.y, active === 'fc'); square(at('f0').x, at('f0').y); square(at('f1').x, at('f1').y);
   } else if (S.mode === 'photo') {
     hs.forEach(h => { if (h.axis === 'y') line(0, h.y, W, h.y, active === h.id, h.id === 'f1'); else line(h.x, 0, h.x, H, active === h.id, h.id === 'f1'); knob(h.x, h.y, active === h.id, h.id === 'f0'); });
   }
@@ -520,8 +594,16 @@ ov.addEventListener('pointerdown', e => {
   } else if (S.mode === 'gradient') {
     if (!hit) return;
     drag = { t: hit.id, ox: m.x - hit.x, oy: m.y - hit.y };
+  } else if (S.mode === 'wash') {
+    if (hit && hit.id === 'wr') drag = { t: 'wr' };
+    else if (hit) { selW = +hit.id.slice(2); drag = { t: hit.id.slice(0, 2), ox: m.x - hit.x, oy: m.y - hit.y }; }
+    else {
+      const fr = S.wash.flow * Math.PI / 180, len = .3, w = S.wash.lobes[selW] ? S.wash.lobes[selW].w : .15;
+      S.wash.lobes.push({ ax: m.x / W, ay: m.y / H, bx: m.x / W + Math.cos(fr) * len, by: m.y / H + Math.sin(fr) * len * wS / hS, w, s: 1 });
+      selW = S.wash.lobes.length - 1; drag = { t: 'wa', ox: 0, oy: 0 };
+    }
   } else if (S.mode === 'photo') {
-    if (hit) drag = { t: hit.id };
+    if (hit) drag = { t: hit.id, ox: m.x - hit.x, oy: m.y - hit.y };
     else { drag = { t: 'pan', x: m.x, y: m.y }; ov.classList.add('grabbing'); }
   }
   active = drag ? drag.t : null;
@@ -541,8 +623,12 @@ ov.addEventListener('pointermove', e => {
     case 'eb': g.edgeW.b = clamp((H - m.y) / S0, 0, .6); break;
     case 'el': g.edgeW.l = clamp(m.x / S0, 0, .6); break;
     case 'er': g.edgeW.r = clamp((W - m.x) / S0, 0, .6); break;
+    case 'wa': { const l = S.wash.lobes[selW]; l.ax = clamp((m.x - drag.ox) / W, -.3, 1.3); l.ay = clamp((m.y - drag.oy) / H, -.3, 1.3); break; }
+    case 'wb': { const l = S.wash.lobes[selW]; l.bx = clamp((m.x - drag.ox) / W, -.3, 1.3); l.by = clamp((m.y - drag.oy) / H, -.3, 1.3); break; }
+    case 'wr': { const l = S.wash.lobes[selW]; l.w = clamp(Math.hypot(m.x - l.ax * W, m.y - l.ay * H) / (S0 * S.wash.spread), .01, .8); break; }
+    case 'fc': ph.cx = clamp((m.x - drag.ox) / W, -.2, 1.2); ph.cy = clamp((m.y - drag.oy) / H, -.2, 1.2); break;
     case 'f0': case 'f1': {
-      const t = ph.fade === 'down' ? m.y / H : ph.fade === 'up' ? 1 - m.y / H : ph.fade === 'right' ? m.x / W : 1 - m.x / W;
+      const t = ph.fade === 'around' ? (m.x - ph.cx * W) / (Math.sqrt(ph.aspect) * S0) : ph.fade === 'down' ? m.y / H : ph.fade === 'up' ? 1 - m.y / H : ph.fade === 'right' ? m.x / W : 1 - m.x / W;
       if (drag.t === 'f0') { const end = ph.start + ph.length; ph.start = clamp(t, -.2, end - .02); ph.length = end - ph.start; }
       else ph.length = clamp(t - ph.start, .02, 1.2);
       syncUI(true); break;
@@ -568,7 +654,8 @@ document.addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.mode === 'blob' && sel >= 0) { e.preventDefault(); removeSel(); }
-  else if (e.key === 'Escape') { sel = -1; syncPoint(); drawOverlay(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && S.mode === 'wash' && selW >= 0) { e.preventDefault(); S.wash.lobes.splice(selW, 1); selW = -1; drawOverlay(); req(); }
+  else if (e.key === 'Escape') { sel = -1; selW = -1; syncPoint(); drawOverlay(); }
   else if (e.key.toLowerCase() === 'h') { showH = !showH; syncUI(); }
 });
 
@@ -594,6 +681,23 @@ $('#panel').innerHTML = `
   </div>
 </section>
 
+<section class="sec">
+  <div class="sec-h"><h2>Canvas</h2><button class="btn btn-ghost btn-sm" type="button" id="swapDims" title="Swap width and height">Swap</button></div>
+  <div class="dims">
+    <label>W<input class="field" type="number" id="dimW" min="64" max="4000" step="1" aria-label="Width"></label>
+    <label>H<input class="field" type="number" id="dimH" min="64" max="4000" step="1" aria-label="Height"></label>
+  </div>
+</section>
+
+<section class="sec" data-in="wash">
+  <div class="sec-h"><h2>Shape</h2></div>
+  ${sl('Flow', 'wash.flow', -90, 90, 1, 'deg')}
+  ${sl('Stretch', 'wash.stretch', 1, 6, .1, 'dec1')}
+  ${sl('Spread', 'wash.spread', .3, 2.5, .01, 'pct')}
+  ${sl('Curve', 'wash.curve', .3, 3, .05, 'dec1')}
+  ${sl('Density', 'density', 0, 2, .01, 'pct')}
+</section>
+
 <section class="sec" data-in="photo">
   <div class="sec-h"><h2>Photo</h2>
     <button class="btn btn-ghost btn-sm" type="button" id="sampleBtn">Sample</button>
@@ -612,8 +716,9 @@ $('#panel').innerHTML = `
 <section class="sec" data-in="photo">
   <div class="sec-h"><h2>Fade</h2></div>
   <div class="stack">
-    ${seg('photo.fade', [['none', 'None'], ['down', 'Down'], ['up', 'Up'], ['left', 'Left'], ['right', 'Right']], 'Fade direction')}
+    ${seg('photo.fade', [['none', 'None'], ['around', 'Around'], ['down', 'Down'], ['up', 'Up'], ['left', 'Left'], ['right', 'Right']], 'Fade direction').replace('class="seg"', 'class="seg tight"')}
     <div data-fade>
+      <div data-around>${sl('Shape', 'photo.aspect', .4, 2.5, .01, 'dec2')}</div>
       ${sl('Start', 'photo.start', -.2, 1, .01, 'pct')}
       ${sl('Length', 'photo.length', .02, 1.2, .01, 'pct')}
     </div>
@@ -681,6 +786,7 @@ function setP(path, v) {
 function fmt(v, f) {
   switch (f) {
     case 'x': return v.toFixed(2) + '×';
+    case 'deg': return Math.round(v) + '°';
     case 'int': return String(Math.round(v));
     case 'pct': return Math.round(v * 100) + '%';
     case 'spct': return (v > 0 ? '+' : '') + Math.round(v * 100) + '%';
@@ -703,6 +809,7 @@ function syncPoint() {
 }
 const HINTS = {
   blob: 'Click to add · Drag to move · Delete to remove',
+  wash: 'Drag the ends to shape a mass · Click to add · Delete to remove',
   linear: 'Drag the two handles to set direction',
   radial: 'Drag the center or the square to resize',
   edge: 'Drag handles in from any edge',
@@ -716,6 +823,8 @@ function syncUI(light) {
   $$('[data-mode-btn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.modeBtn === S.mode)));
   $$('[data-in]').forEach(s => s.hidden = s.dataset.in !== S.mode);
   $('[data-fade]').hidden = S.photo.fade === 'none';
+  $('[data-around]').hidden = S.photo.fade !== 'around';
+  $('#readout').textContent = W + ' × ' + H; $('#dimW').value = W; $('#dimH').value = H;
   $('#turbTitle').textContent = S.mode === 'photo' ? 'Dissolve' : 'Turbulence';
   $('#turbBody').hidden = !turbOpen; $('#turbHead').classList.toggle('closed', !turbOpen); $('#turbOpen').setAttribute('aria-expanded', String(turbOpen));
   $('#turbBody').style.opacity = S.turb.on ? '' : '.4';
@@ -734,6 +843,8 @@ function syncUI(light) {
 }
 
 const panel = $('#panel');
+panel.addEventListener('pointerdown', e => { if (e.target.type === 'range') sliding = true; });
+document.addEventListener('pointerup', () => { if (sliding) { sliding = false; req(); } });
 panel.addEventListener('input', e => {
   const t = e.target;
   if (t.type === 'range' && t.dataset.bind) { setP(t.dataset.bind, parseFloat(t.value)); syncRange(t); if (t.dataset.bind === 'density') syncUI(true); drawOverlay(); req(); }
@@ -762,8 +873,16 @@ $('#inkHex').addEventListener('change', e => setInk(e.target.value.trim()));
 $('#inkPick').addEventListener('input', e => setInk(e.target.value));
 
 /* Variation */
-function setLook(seed) { if (!S.look) return; S.look.seed = seed; applyLook(S); if (sel >= S.blob.points.length || (sel >= 0 && !S.blob.points[sel].lock)) sel = -1; syncUI(); req(); }
+function setLook(seed) { if (!S.look) return; S.look.seed = seed; applyLook(S); selW = -1; if (sel >= S.blob.points.length || (sel >= 0 && !S.blob.points[sel].lock)) sel = -1; syncUI(); req(); }
 $('#varRand').addEventListener('click', () => setLook(1 + Math.floor(Math.random() * 99998)));
+function applyDims(w, h) {
+  setDims(Math.round(clamp(w || W, 64, 4000)), Math.round(clamp(h || H, 64, 4000)));
+  try { localStorage.setItem('dither-size', JSON.stringify({ w: W, h: H })); } catch (e) {}
+  syncUI(); req();
+}
+$('#dimW').addEventListener('change', e => applyDims(+e.target.value, H));
+$('#dimH').addEventListener('change', e => applyDims(W, +e.target.value));
+$('#swapDims').addEventListener('click', () => applyDims(H, W));
 
 /* ---------- Presets & modes ---------- */
 const presetsFor = m => ({
@@ -781,7 +900,7 @@ function loadPreset(v) {
   const [t, i] = v.split(':'), src = t === 'b' ? BUILTIN[+i] : custom[+i];
   if (!src) return;
   const soft = S.soft;
-  currentPreset = v; S = merge(clone(BASE), src.data); S.soft = soft; sel = -1;
+  currentPreset = v; S = merge(clone(BASE), src.data); S.soft = soft; sel = -1; selW = -1;
   presetTurb = clone(S.turb);
   fillPresets(); syncUI(); req();
 }
@@ -789,7 +908,7 @@ function switchMode(m) {
   if (m === S.mode) return;
   modeCache[S.mode] = { S: clone(S), preset: currentPreset, turb: clone(presetTurb) };
   const soft = S.soft;
-  if (modeCache[m]) { const c = modeCache[m]; S = clone(c.S); currentPreset = c.preset; presetTurb = clone(c.turb); S.soft = soft; sel = -1; fillPresets(); syncUI(); req(); }
+  if (modeCache[m]) { const c = modeCache[m]; S = clone(c.S); currentPreset = c.preset; presetTurb = clone(c.turb); S.soft = soft; sel = -1; selW = -1; fillPresets(); syncUI(); req(); }
   else { const { b } = presetsFor(m); loadPreset('b:' + b[0][0]); }
   if (m === 'photo' && !photo) useSample();
 }
